@@ -38,10 +38,9 @@ class LayoutBuilder<T : Layout>(
     private var composable: @Composable (@Composable () -> Unit) -> Unit = { it() }
 
     internal fun setData(data: Any) {
-        if (type.isInstance(data)) {
-            @Suppress("UNCHECKED_CAST")
-            this.data.value = data as T
-        }
+        require(type.isInstance(data))
+        @Suppress("UNCHECKED_CAST")
+        this.data.value = data as T
     }
 
     internal fun render(builder: NavGraphBuilder) {

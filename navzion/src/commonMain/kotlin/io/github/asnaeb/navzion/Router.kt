@@ -139,7 +139,14 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
 
         for (data in layoutDataSet) {
             layoutBuilders[data::class]?.apply {
+                setData(data)
                 layoutDataTypes.add(data::class)
+            }
+        }
+
+        layoutBuilders.values.forEach {
+            if (it !in toParents) {
+                it.data.value = null
             }
         }
 
@@ -163,17 +170,17 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
         val relevantParents = toParents.take(toParents.indexOf(nearestCommonParent))
 
         setDestinationsAndNavigate(navController, relevantParents, to)
-
-        for (data in layoutDataSet) {
-            layoutBuilders[data::class]?.apply {
-                setData(data)
-            }
-        }
     }
 
     fun <T : Route> navigate(to: T) {
         val fromParents = getWithAllParents(activeLayoutType)
         val toParents = getAllParents(to::class)
+
+        layoutBuilders.values.forEach {
+            if (it !in toParents) {
+                it.data.value = null
+            }
+        }
 
         val nearestCommonParent = fromParents.first { it in toParents }
         val navController = nearestCommonParent.navController ?: error("NavHostController not registered")

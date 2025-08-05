@@ -66,11 +66,13 @@ val users = arrayOf(
 val router = Router(start = Main) {
     wrapper { content ->
         val id = router.getLayoutData<UserLayout>()?.userId
+        val addTyp = router.getLayoutData<UserAddress>()?.type
         val activeRoute = router.getActiveRouteAsState()
 
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             BasicText("Active route is: $activeRoute")
             BasicText("User id is: $id")
+            BasicText("Address type is: $addTyp")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (id in 1..3) {

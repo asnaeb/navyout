@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,32 +45,30 @@ fun main() = application {
                         .background(Color.DarkGray)
                         .padding(horizontal = 12.dp)
                 ) {
-                    Row(Modifier.fillMaxSize()) {
-                        Row(
-                            Modifier.fillMaxHeight(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(Modifier.size(12.dp).clip(CircleShape).background(Color.Red).clickable { exitApplication() })
-                            Box(Modifier.size(12.dp).clip(CircleShape).background(Color.Yellow).clickable { window.isMinimized = true })
-                            Box(
-                                Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Green)
-                                    .clickable {
-                                        if (window.placement == WindowPlacement.Maximized) {
-                                            window.placement = WindowPlacement.Floating
-                                        }
-                                        else {
-                                            window.placement = WindowPlacement.Maximized
-                                        }
+                    Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
+                        BasicText("navzion", color = { Color.White })
+                    }
+                    Row(
+                        Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(Color.Red).clickable { exitApplication() })
+                        Box(Modifier.size(12.dp).clip(CircleShape).background(Color.Yellow).clickable { window.isMinimized = true })
+                        Box(
+                            Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(Color.Green)
+                                .clickable {
+                                    if (window.placement == WindowPlacement.Maximized) {
+                                        window.placement = WindowPlacement.Floating
                                     }
-                            )
-                        }
-                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                            BasicText("navzion", color = { Color.White })
-                        }
+                                    else {
+                                        window.placement = WindowPlacement.Maximized
+                                    }
+                                }
+                        )
                     }
                 }
                 router.Render()
