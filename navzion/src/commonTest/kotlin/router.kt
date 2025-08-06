@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import io.github.asnaeb.navzion.Layout
 import io.github.asnaeb.navzion.Route
 import io.github.asnaeb.navzion.Router
+import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
 
 data class User(
@@ -65,11 +66,13 @@ val users = arrayOf(
 
 val router = Router(start = Main) {
     wrapper { content ->
-        val id = router.getLayoutData<UserLayout>()?.userId
-        val addTyp = router.getLayoutData<UserAddress>()?.type
+        val id = router.getLayoutDataAsState<UserLayout>()?.userId
+        val addTyp = router.getLayoutDataAsState<UserAddress>()?.type
         val activeRoute = router.getActiveRouteAsState()
+        val isLoading = router.getIsLoadingAsState()
 
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            BasicText("Is Loading: $isLoading")
             BasicText("Active route is: $activeRoute")
             BasicText("User id is: $id")
             BasicText("Address type is: $addTyp")
@@ -101,10 +104,18 @@ val router = Router(start = Main) {
     }
 
     layout<AnotherLayout> {
+        loader {
+            delay(500)
+            println("Loading AnotherLayout...")
+        }
+
         route<AnotherRoute> {
-            content {
-                BasicText("Hello another router: ${it.value}")
+            loader {
+                delay(500)
+                println("Loading AnotherRoute...")
             }
+
+            content { BasicText("Hello another router: ${it.value}") }
         }
     }
 
@@ -118,7 +129,7 @@ val router = Router(start = Main) {
                 )
             }
 
-            val data = router.getLayoutData<UserLayout>()
+            val data = router.getLayoutDataAsState<UserLayout>()
             val user = users.find { it.id == data?.userId }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -142,7 +153,7 @@ val router = Router(start = Main) {
 
         route<UserHome> {
             content {
-                val user = users.find { it.id == router.getLayoutData<UserLayout>()?.userId }
+                val user = users.find { it.id == router.getLayoutDataAsState<UserLayout>()?.userId }
 
                 BasicText("This is the home page of ${user?.username}")
             }
@@ -150,7 +161,7 @@ val router = Router(start = Main) {
 
         route<UserFirstName> {
             content {
-                val user = users.find { it.id == router.getLayoutData<UserLayout>()?.userId }
+                val user = users.find { it.id == router.getLayoutDataAsState<UserLayout>()?.userId }
 
                 BasicText("First name of ${user?.username} is ${user?.firstname}")
             }
@@ -158,7 +169,7 @@ val router = Router(start = Main) {
 
         route<UserLastName> {
             content {
-                val user = users.find { it.id == router.getLayoutData<UserLayout>()?.userId }
+                val user = users.find { it.id == router.getLayoutDataAsState<UserLayout>()?.userId }
 
                 BasicText("Last name of ${user?.username} is ${user?.lastname}")
             }
@@ -166,7 +177,7 @@ val router = Router(start = Main) {
 
         route<UserEmail> {
             content {
-                val user = users.find { it.id == router.getLayoutData<UserLayout>()?.userId }
+                val user = users.find { it.id == router.getLayoutDataAsState<UserLayout>()?.userId }
 
                 BasicText("Email of ${user?.username} is ${user?.email}")
             }
@@ -174,8 +185,8 @@ val router = Router(start = Main) {
 
         layout<UserAddress> {
             wrapper { content ->
-                val userId = router.getLayoutData<UserLayout>()?.userId
-                val addressType = router.getLayoutData<UserAddress>()?.type
+                val userId = router.getLayoutDataAsState<UserLayout>()?.userId
+                val addressType = router.getLayoutDataAsState<UserAddress>()?.type
                 val user = users.find { it.id == userId }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -194,7 +205,7 @@ val router = Router(start = Main) {
 
             route<AddressStreet> {
                 content {
-                    val userId = router.getLayoutData<UserLayout>()?.userId
+                    val userId = router.getLayoutDataAsState<UserLayout>()?.userId
                     val user = users.find { it.id == userId }
 
                     BasicText("Address Street: ${user?.addressStreet}")
@@ -203,7 +214,7 @@ val router = Router(start = Main) {
 
             route<AddressCity> {
                 content {
-                    val userId = router.getLayoutData<UserLayout>()?.userId
+                    val userId = router.getLayoutDataAsState<UserLayout>()?.userId
                     val user = users.find { it.id == userId }
 
                     BasicText("Address City: ${user?.addressCity}")

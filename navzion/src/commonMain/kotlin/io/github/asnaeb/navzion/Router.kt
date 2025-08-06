@@ -2,10 +2,14 @@ package io.github.asnaeb.navzion
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlin.reflect.KClass
 
 class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) {
@@ -13,10 +17,11 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
 
     private val rootLayoutBuilder: LayoutBuilder<Nothing> = LayoutBuilder(this, Nothing::class, null)
 
-    private val routeBuilders: MutableMap<KClass<out Route>, RouteBuilder<out Route>> = mutableMapOf()
-
     @PublishedApi
     internal var activeRoute = MutableStateFlow(start)
+
+    @PublishedApi
+    internal val routeBuilders: MutableMap<KClass<out Route>, RouteBuilder<out Route>> = mutableMapOf()
 
     @PublishedApi
     internal val layoutBuilders: MutableMap<KClass<out Layout>, LayoutBuilder<out Layout>> = mutableMapOf()
@@ -27,49 +32,68 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
         registerLayout(rootLayoutBuilder)
     }
 
-    private fun safeAccessRoute(type: KClass<out Route>): RouteBuilder<out Route> {
-        require(type in routeBuilders) {
-            "Tried to access a route (${type.simpleName}) that wasn't registered"
+    private suspend fun runLoaderIfNeeded(route: Route) {
+        safeAccessRoute(route::class).let {
+            if (it.loaderFn != null && it.PendingComposable == null) {
+                it.loaderFn?.invoke(route)
+                it.loaderRan = true
+            }
+        }
+    }
+
+    private suspend fun runLoaderIfNeeded(layoutBuilder: LayoutBuilder<*>) {
+        if (layoutBuilder.loaderFn != null && layoutBuilder.PendingComposable == null) {
+            layoutBuilder.loaderFn?.invoke(layoutBuilder.data.value)
+            layoutBuilder.loaderRan = true
+        }
+    }
+
+    private fun runLoadersAndNavigate(
+        navController: NavController,
+        layouts: List<LayoutBuilder<*>>,
+        actualDestination: Any,
+        requestedRoute: Route
+    ) {
+        CoroutineScope(Dispatchers.Default).launch {
+            layouts.forEach {
+                launch {
+                    it.loading.value = true
+                    runLoaderIfNeeded(it)
+                    it.loading.value = false
+                }
+            }
+
+            launch {
+                safeAccessRoute(requestedRoute::class).loading.value = true
+                runLoaderIfNeeded(requestedRoute)
+                safeAccessRoute(requestedRoute::class).loading.value = false
+            }
         }
 
-        return routeBuilders[type]!!
-    }
+        .invokeOnCompletion {
+            when (actualDestination) {
+                is String -> navController.navigate(actualDestination)
+                is Route -> navController.navigate(actualDestination)
+                else -> error("Unexpected destination type ${actualDestination::class}")
+            }
 
-    private fun safeAccessLayout(type: KClass<out Layout>): LayoutBuilder<out Layout> {
-        require(type in layoutBuilders) {
-            "Tried to access a LayoutRoute (${type}) that wasn't registered"
+            activeRoute.value = requestedRoute
         }
-
-        return layoutBuilders[type]!!
     }
 
-    private fun navigateAndUpdateState(
+    private fun setDestinationsAndNavigate(
         navController: NavHostController,
-        actualDestination: String,
-        requestedDestination: Route
+        relevantParents: List<LayoutBuilder<*>>,
+        to: Route
     ) {
-        navController.navigate(actualDestination)
-        activeRoute.value = requestedDestination
-    }
-
-    private fun navigateAndUpdateState(
-        navController: NavHostController,
-        actualDestination: Route,
-        requestedDestination: Route
-    ) {
-        navController.navigate(actualDestination)
-        activeRoute.value = requestedDestination
-    }
-
-    private fun setDestinationsAndNavigate(navController: NavHostController, relevantParents: List<LayoutBuilder<*>>, to: Route) {
         if (relevantParents.isEmpty()) {
-            navigateAndUpdateState(navController, to, to)
+            runLoadersAndNavigate(navController, relevantParents, to, to)
             return
         }
 
         if (relevantParents.size == 1) {
             relevantParents.first().destination = to
-            navigateAndUpdateState(navController, relevantParents.first().key, to)
+            runLoadersAndNavigate(navController, relevantParents, relevantParents.first().key, to)
             return
         }
 
@@ -82,7 +106,7 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
             }
         }
 
-        navigateAndUpdateState(navController, relevantParents.last().key, to)
+        runLoadersAndNavigate(navController, relevantParents, relevantParents.last().key, to)
     }
 
     private fun getAllParents(routeType: KClass<out Route>): MutableSet<LayoutBuilder<out Layout>> {
@@ -96,6 +120,24 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
         }
 
         return parents
+    }
+
+    @PublishedApi
+    internal fun safeAccessRoute(type: KClass<out Route>): RouteBuilder<out Route> {
+        require(type in routeBuilders) {
+            "Tried to access a route (${type.simpleName}) that wasn't registered"
+        }
+
+        return routeBuilders[type]!!
+    }
+
+    @PublishedApi
+    internal fun safeAccessLayout(type: KClass<out Layout>): LayoutBuilder<out Layout> {
+        require(type in layoutBuilders) {
+            "Tried to access a LayoutRoute (${type}) that wasn't registered"
+        }
+
+        return layoutBuilders[type]!!
     }
 
     @PublishedApi
@@ -190,14 +232,30 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing>.() -> Unit) 
     }
 
     @Composable
-    inline fun <reified T : Layout> getLayoutData(): T? {
+    fun getIsLoadingAsState(): Boolean {
+        return layoutBuilders.values.any { it.loading.collectAsState().value  }
+                || routeBuilders.values.any { it.loading.collectAsState().value  }
+    }
+
+    @Composable
+    inline fun <reified T : Layout> getIsLayoutLoadingAsState(): Boolean {
+        return safeAccessLayout(T::class).loading.collectAsState().value
+    }
+
+    @Composable
+    inline fun <reified T : Route> getIsRouteLoadingAsState(): Boolean {
+        return safeAccessRoute(T::class).loading.collectAsState().value
+    }
+
+    @Composable
+    inline fun <reified T : Layout> getLayoutDataAsState(): T? {
         val currentLayout = getCurrentLayout()
 
         if (getWithAllParents(currentLayout).any { it.type == T::class }) {
-            return layoutBuilders[T::class]?.data?.value as T?
+            return safeAccessLayout(T::class).data.value as T?
         }
 
-        return layoutBuilders[T::class]?.data?.collectAsState()?.value as T?
+        return safeAccessLayout(T::class).data.collectAsState().value as T?
     }
 
     @Composable
