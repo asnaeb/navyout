@@ -12,18 +12,22 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.jvm.JvmName
 import kotlin.reflect.KClass
 
 @NodeMarker
-class LayoutBuilder<T : Layout>(
+class LayoutBuilder<Arg : Layout, Data>(
     val router: Router,
     @PublishedApi
-    internal val type: KClass<T>,
+    internal val type: KClass<Arg>,
     internal val parentType: KClass<out Layout>?,
-    initialData: T? = null,
+    initialArg: Arg? = null,
 ) {
     @PublishedApi
-    internal val data = MutableStateFlow(initialData)
+    internal var data: Data? = null
+
+    @PublishedApi
+    internal val arg = MutableStateFlow(initialArg)
 
     @PublishedApi
     internal val key get() = type.qualifiedName ?: hashCode().toString()
@@ -35,37 +39,42 @@ class LayoutBuilder<T : Layout>(
     internal var destination: Any? = null
 
     @PublishedApi
-    internal val childRoutes: MutableSet<RouteBuilder<out Route>> = mutableSetOf()
+    internal val childRoutes: MutableSet<RouteBuilder<out Route, *>> = mutableSetOf()
 
     @PublishedApi
-    internal val childLayouts: MutableSet<LayoutBuilder<out Layout>> = mutableSetOf()
+    internal val childLayouts: MutableSet<LayoutBuilder<out Layout, *>> = mutableSetOf()
 
-    private var WrapperComposable: @Composable (@Composable () -> Unit) -> Unit = { it() }
+    internal val withParents by lazy { router.getWithParents(type) }
 
-    internal var PendingComposable: (@Composable () -> Unit)? = null
+    @PublishedApi
+    internal var wrapperComposable: @Composable (Data, @Composable () -> Unit) -> Unit = { _, children -> children() }
 
-    internal var loaderFn: (suspend (Any?) -> Any)? = null
+    internal var pendingComposable: (@Composable () -> Unit)? = null
+
+    internal var loaderFn: (suspend (Layout?) -> Unit)? = null
 
     internal var loaderRan = false
 
     @PublishedApi
     internal val loading = MutableStateFlow(false)
 
-    internal fun setData(data: Any) {
-        require(type.isInstance(data))
+    internal fun setArg(value: Layout) {
+        require(type.isInstance(value))
         @Suppress("UNCHECKED_CAST")
-        this.data.value = data as T
+        arg.value = value as Arg
     }
 
     internal fun render(builder: NavGraphBuilder) {
         builder.composable(key) {
             navController = rememberNavController()
-
             var loaded by remember { mutableStateOf(loaderRan || loaderFn == null) }
 
             if (loaded) {
+                val rememberedData = remember { data }
+
                 CurrentLayoutProvider(type) {
-                    WrapperComposable {
+                    @Suppress("UNCHECKED_CAST")
+                    wrapperComposable(rememberedData as Data) {
                         NavHost(navController!!, destination ?: error("start destination not set")) {
                             childRoutes.forEach { route -> route.render(this) }
                             childLayouts.forEach { layoutRoute -> layoutRoute.render(this) }
@@ -77,25 +86,28 @@ class LayoutBuilder<T : Layout>(
             }
 
             LaunchedEffect(Unit) {
-                loading.value = true
-                loaderFn?.invoke(data.value)
-                loading.value = false
+                loaderFn?.invoke(arg.value)
                 loaderRan = false
                 loaded = true
             }
 
             CurrentLayoutProvider(type) {
-                PendingComposable?.invoke()
+                pendingComposable?.invoke()
             }
         }
     }
 
-    fun wrapper(fn: @Composable (@Composable () -> Unit) -> Unit) {
-        WrapperComposable = fn
+    inline fun wrapper(crossinline fn: @Composable (@Composable () -> Unit) -> Unit) {
+        wrapperComposable = { _, children -> fn(children) }
     }
 
-    inline fun <reified R : Route> route(init: @NodeMarker RouteBuilder<R>.() -> Unit) {
-        val routeBuilder = RouteBuilder(R::class, type, router)
+    fun wrapper(fn: @Composable (Data, @Composable () -> Unit) -> Unit) {
+        wrapperComposable = fn
+    }
+
+    @JvmName("routeWithData")
+    inline fun <reified RArg : Route, RData> route(init: @NodeMarker RouteBuilder<RArg, RData>.() -> Unit) {
+        val routeBuilder = RouteBuilder<RArg, RData>(RArg::class, type, router)
 
         init(routeBuilder)
 
@@ -103,8 +115,24 @@ class LayoutBuilder<T : Layout>(
         router.registerRoute(routeBuilder)
     }
 
-    inline fun <reified L : Layout> layout(initialData: L? = null, init: @NodeMarker LayoutBuilder<L>.() -> Unit) {
-        val layoutBuilder = LayoutBuilder(router, L::class, type, initialData)
+    @JvmName("routeWithoutData")
+    inline fun <reified RArg : Route> route(init: @NodeMarker RouteBuilder<RArg, Unit>.() -> Unit) {
+        val routeBuilder = RouteBuilder<RArg, Unit>(RArg::class, type, router)
+
+        init(routeBuilder)
+
+        routeBuilder.data = Unit
+
+        childRoutes.add(routeBuilder)
+        router.registerRoute(routeBuilder)
+    }
+
+    @JvmName("layoutWithData")
+    inline fun <reified LArg : Layout, LData> layout(
+        initialData: LArg? = null,
+        init: @NodeMarker LayoutBuilder<LArg, LData>.() -> Unit
+    ) {
+        val layoutBuilder = LayoutBuilder<LArg, LData>(router, LArg::class, type, initialData)
 
         init(layoutBuilder)
 
@@ -112,12 +140,47 @@ class LayoutBuilder<T : Layout>(
         router.registerLayout(layoutBuilder)
     }
 
-    fun loader(fn: suspend (T?) -> Unit) {
-        @Suppress("UNCHECKED_CAST")
-        loaderFn = fn as suspend (Any?) -> Any
+    @JvmName("layoutWithoutData")
+    inline fun <reified LArg : Layout> layout(
+        initialData: LArg? = null,
+        init: @NodeMarker LayoutBuilder<LArg, Unit>.() -> Unit
+    ) {
+        val layoutBuilder = LayoutBuilder<LArg, Unit>(router, LArg::class, type, initialData)
+
+        init(layoutBuilder)
+
+        layoutBuilder.data = Unit
+
+        childLayouts.add(layoutBuilder)
+        router.registerLayout(layoutBuilder)
+    }
+
+    fun loader(fn: suspend () -> Data) {
+        loaderFn = loaderFn@ {
+            if (loading.value) {
+                return@loaderFn
+            }
+
+            loading.value = true
+            data = fn()
+            loading.value = false
+        }
+    }
+
+    fun loader(fn: suspend (Arg?) -> Data) {
+        loaderFn = loaderFn@ {
+            if (loading.value) {
+                return@loaderFn
+            }
+
+            loading.value = true
+            @Suppress("UNCHECKED_CAST")
+            data = fn(it as Arg?)
+            loading.value = false
+        }
     }
 
     fun pending(fn: @Composable () -> Unit) {
-        PendingComposable = fn
+        pendingComposable = fn
     }
 }

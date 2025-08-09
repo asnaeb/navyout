@@ -13,54 +13,90 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.reflect.KClass
 
 @NodeMarker
-class RouteBuilder<T : Route>(
-    internal val type: KClass<T>,
+class RouteBuilder<Arg : Route, Data>(
+    internal val type: KClass<Arg>,
     internal val parentType: KClass<out Layout>,
     val router: Router
 ) {
-    private var ContentComposable: @Composable (T) -> Unit = {}
+    @PublishedApi
+    internal var data: Data? = null
 
-    internal var PendingComposable: (@Composable (T) -> Unit)? = null
+    @PublishedApi
+    internal var contentComposable: (@Composable (Data) -> Unit)? = null
 
-    internal var loaderFn: (suspend (Any) -> Any)? = null
+    internal var pendingComposable: (@Composable () -> Unit)? = null
+
+    @PublishedApi
+    internal var loaderFn: (suspend (Any) -> Unit)? = null
 
     internal var loaderRan = false
 
     @PublishedApi
     internal val loading = MutableStateFlow(false)
 
+    internal val parents by lazy {
+        router.getParents(type)
+    }
+
     internal fun render(builder: NavGraphBuilder) {
         builder.composable(type) { entry ->
-            val data: T = entry.toRoute(type)
+            val arg: Arg = entry.toRoute(type)
             var loaded by remember { mutableStateOf(loaderRan || loaderFn == null) }
 
             if (loaded) {
-                ContentComposable(data)
+                val rememberedData = remember { data }
+
+                @Suppress("UNCHECKED_CAST")
+                contentComposable?.invoke(rememberedData as Data)
+
                 return@composable
             }
 
             LaunchedEffect(Unit) {
-                loading.value = true
-                loaderFn!!(data)
-                loading.value = false
+                loaderFn!!(arg)
                 loaderRan = false
                 loaded = true
             }
 
-            PendingComposable?.invoke(data)
+            pendingComposable?.invoke()
         }
     }
 
-    fun content(fn: @Composable (T) -> Unit) {
-        ContentComposable = fn
+    inline fun content(crossinline fn: @Composable () -> Unit) {
+        contentComposable = { _ -> fn() }
     }
 
-    fun pending(fn: @Composable (T) -> Unit) {
-        PendingComposable = fn
+    fun content(fn: @Composable (Data) -> Unit) {
+        contentComposable = fn
     }
 
-    fun  loader(fn: suspend (T) -> Any) {
-        @Suppress("UNCHECKED_CAST")
-        loaderFn = fn as suspend (Any) -> Any
+    fun pending(fn: @Composable () -> Unit) {
+        pendingComposable = fn
+    }
+
+    inline fun loader(crossinline fn: suspend () -> Data) {
+        loaderFn = loaderFn@ {
+            if (loading.value) {
+                return@loaderFn
+            }
+
+            loading.value = true
+            @Suppress("UNCHECKED_CAST")
+            data = fn()
+            loading.value = false
+        }
+    }
+
+    inline fun loader(crossinline fn: suspend (Arg) -> Data) {
+        loaderFn = loaderFn@ {
+            if (loading.value) {
+                return@loaderFn
+            }
+
+            loading.value = true
+            @Suppress("UNCHECKED_CAST")
+            data = fn(it as Arg)
+            loading.value = false
+        }
     }
 }
