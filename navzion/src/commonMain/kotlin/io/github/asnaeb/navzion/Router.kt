@@ -53,7 +53,7 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> 
         actualDestination: Any,
         requestedRoute: Route
     ) {
-        CoroutineScope(Dispatchers.Default).launch {
+        CoroutineScope(Dispatchers.Main).launch {
             layouts.forEach {
                 launch {
                     runLoaderIfNeeded(it)
@@ -64,7 +64,6 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> 
                 runLoaderIfNeeded(requestedRoute)
             }
         }
-
         .invokeOnCompletion {
             when (actualDestination) {
                 is String -> navController.navigate(actualDestination)

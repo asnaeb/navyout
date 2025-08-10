@@ -1,11 +1,18 @@
 package io.github.asnaeb.navzion
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -64,8 +71,47 @@ class LayoutBuilder<Arg : Layout, Data>(
         arg.value = value as Arg
     }
 
+    private val defaultEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        if (parentType != null) {
+            router.safeAccess(parentType).childrenEnterTransition(this)
+        }
+        else {
+            fadeIn()
+        }
+    }
+
+    private var defaultExitTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        if (parentType != null) {
+            router.safeAccess(parentType).childrenExitTransition(this)
+        }
+        else {
+            fadeOut()
+        }
+    }
+
+    private var defaultSizeTransform: AnimatedContentTransitionScope<NavBackStackEntry>.() -> SizeTransform = {
+        if (parentType != null) {
+            router.safeAccess(parentType).childrenSizeTransform(this)
+        }
+        else {
+            SizeTransform()
+        }
+    }
+
+    internal var enterTransition = defaultEnterTransition
+    internal var exitTransition = defaultExitTransition
+    internal var sizeTransform = defaultSizeTransform
+    internal var childrenEnterTransition = defaultEnterTransition
+    internal var childrenExitTransition = defaultExitTransition
+    internal var childrenSizeTransform = defaultSizeTransform
+
     internal fun render(builder: NavGraphBuilder) {
-        builder.composable(key) {
+        builder.composable(
+            key,
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            sizeTransform = sizeTransform
+        ) {
             navController = rememberNavController()
             var loaded by remember { mutableStateOf(loaderRan || loaderFn == null) }
 
@@ -75,7 +121,13 @@ class LayoutBuilder<Arg : Layout, Data>(
                 CurrentLayoutProvider(type) {
                     @Suppress("UNCHECKED_CAST")
                     wrapperComposable(rememberedData as Data) {
-                        NavHost(navController!!, destination ?: error("start destination not set")) {
+                        NavHost(
+                            navController!!,
+                            destination ?: error("start destination not set"),
+                            enterTransition = childrenEnterTransition,
+                            exitTransition = childrenExitTransition,
+                            sizeTransform = childrenSizeTransform
+                        ) {
                             childRoutes.forEach { route -> route.render(this) }
                             childLayouts.forEach { layoutRoute -> layoutRoute.render(this) }
                         }
@@ -95,6 +147,30 @@ class LayoutBuilder<Arg : Layout, Data>(
                 pendingComposable?.invoke()
             }
         }
+    }
+
+    fun enterTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition) {
+        enterTransition = fn
+    }
+
+    fun exitTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition) {
+        exitTransition = fn
+    }
+
+    fun sizeTransform(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> SizeTransform) {
+        sizeTransform = fn
+    }
+
+    fun childrenEnterTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition) {
+        childrenEnterTransition = fn
+    }
+
+    fun childrenExitTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition) {
+        childrenExitTransition = fn
+    }
+
+    fun childrenSizeTransform(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> SizeTransform) {
+        childrenSizeTransform = fn
     }
 
     inline fun wrapper(crossinline fn: @Composable (@Composable () -> Unit) -> Unit) {

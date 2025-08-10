@@ -4,7 +4,7 @@ kotlin = "2.2.0"
 android-minSdk = "24"
 android-compileSdk = "36"
 composeMultiplatform = "1.8.2"
-navigation = "2.9.0-beta04"
+navigation = "2.9.0-beta03"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
