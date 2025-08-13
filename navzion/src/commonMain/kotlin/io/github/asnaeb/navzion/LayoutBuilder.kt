@@ -4,14 +4,12 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -24,26 +22,19 @@ import kotlin.reflect.KClass
 
 @NodeMarker
 class LayoutBuilder<Arg : Layout, Data>(
-    val router: Router,
-    @PublishedApi
-    internal val type: KClass<Arg>,
-    internal val parentType: KClass<out Layout>?,
+    router: Router,
+    type: KClass<Arg>,
+    parentType: KClass<out Layout>?,
     initialArg: Arg? = null,
-) {
-    @PublishedApi
-    internal var data: Data? = null
-
+) : NodeBuilder<Layout, Arg, Data>(router, type, parentType) {
     @PublishedApi
     internal val arg = MutableStateFlow(initialArg)
-
-    @PublishedApi
-    internal val key get() = type.qualifiedName ?: hashCode().toString()
 
     @PublishedApi
     internal var navController: NavHostController? = null
 
     @PublishedApi
-    internal var destination: Any? = null
+    internal var destination: String = ""
 
     @PublishedApi
     internal val childRoutes: MutableSet<RouteBuilder<out Route, *>> = mutableSetOf()
@@ -51,19 +42,21 @@ class LayoutBuilder<Arg : Layout, Data>(
     @PublishedApi
     internal val childLayouts: MutableSet<LayoutBuilder<out Layout, *>> = mutableSetOf()
 
-    internal val withParents by lazy { router.getWithParents(type) }
+    internal val withParents by lazy {
+        var layout = router.safeAccess(type)
+
+        val parents = mutableSetOf(layout)
+
+        while (layout.parentType != null) {
+            layout = router.safeAccess(layout.parentType)
+            parents.add(layout)
+        }
+
+        parents
+    }
 
     @PublishedApi
     internal var wrapperComposable: @Composable (Data, @Composable () -> Unit) -> Unit = { _, children -> children() }
-
-    internal var pendingComposable: (@Composable () -> Unit)? = null
-
-    internal var loaderFn: (suspend (Layout?) -> Unit)? = null
-
-    internal var loaderRan = false
-
-    @PublishedApi
-    internal val loading = MutableStateFlow(false)
 
     internal fun setArg(value: Layout) {
         require(type.isInstance(value))
@@ -71,41 +64,11 @@ class LayoutBuilder<Arg : Layout, Data>(
         arg.value = value as Arg
     }
 
-    private val defaultEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        if (parentType != null) {
-            router.safeAccess(parentType).childrenEnterTransition(this)
-        }
-        else {
-            fadeIn()
-        }
-    }
-
-    private var defaultExitTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        if (parentType != null) {
-            router.safeAccess(parentType).childrenExitTransition(this)
-        }
-        else {
-            fadeOut()
-        }
-    }
-
-    private var defaultSizeTransform: AnimatedContentTransitionScope<NavBackStackEntry>.() -> SizeTransform = {
-        if (parentType != null) {
-            router.safeAccess(parentType).childrenSizeTransform(this)
-        }
-        else {
-            SizeTransform()
-        }
-    }
-
-    internal var enterTransition = defaultEnterTransition
-    internal var exitTransition = defaultExitTransition
-    internal var sizeTransform = defaultSizeTransform
     internal var childrenEnterTransition = defaultEnterTransition
     internal var childrenExitTransition = defaultExitTransition
     internal var childrenSizeTransform = defaultSizeTransform
 
-    internal fun render(builder: NavGraphBuilder) {
+    override fun render(builder: NavGraphBuilder) {
         builder.composable(
             key,
             enterTransition = enterTransition,
@@ -113,9 +76,16 @@ class LayoutBuilder<Arg : Layout, Data>(
             sizeTransform = sizeTransform
         ) {
             navController = rememberNavController()
-            var loaded by remember { mutableStateOf(loaderRan || loaderFn == null) }
+            val isLoaded by loaded.collectAsState()
 
-            if (loaded) {
+            DisposableEffect(Unit) {
+                onDispose {
+                    loaded.value = false
+                    loading.value = false
+                }
+            }
+
+            if (loaderFn == null || isLoaded) {
                 val rememberedData = remember { data }
 
                 CurrentLayoutProvider(type) {
@@ -123,7 +93,7 @@ class LayoutBuilder<Arg : Layout, Data>(
                     wrapperComposable(rememberedData as Data) {
                         NavHost(
                             navController!!,
-                            destination ?: error("start destination not set"),
+                            destination,
                             enterTransition = childrenEnterTransition,
                             exitTransition = childrenExitTransition,
                             sizeTransform = childrenSizeTransform
@@ -133,32 +103,17 @@ class LayoutBuilder<Arg : Layout, Data>(
                         }
                     }
                 }
-
-                return@composable
             }
+            else {
+                LaunchedEffect(Unit) {
+                    loaderFn?.invoke(arg.value)
+                }
 
-            LaunchedEffect(Unit) {
-                loaderFn?.invoke(arg.value)
-                loaderRan = false
-                loaded = true
-            }
-
-            CurrentLayoutProvider(type) {
-                pendingComposable?.invoke()
+                CurrentLayoutProvider(type) {
+                    pendingComposable?.invoke()
+                }
             }
         }
-    }
-
-    fun enterTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition) {
-        enterTransition = fn
-    }
-
-    fun exitTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition) {
-        exitTransition = fn
-    }
-
-    fun sizeTransform(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> SizeTransform) {
-        sizeTransform = fn
     }
 
     fun childrenEnterTransition(fn: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition) {
@@ -173,7 +128,7 @@ class LayoutBuilder<Arg : Layout, Data>(
         childrenSizeTransform = fn
     }
 
-    inline fun wrapper(crossinline fn: @Composable (@Composable () -> Unit) -> Unit) {
+    fun wrapper(fn: @Composable (@Composable () -> Unit) -> Unit) {
         wrapperComposable = { _, children -> fn(children) }
     }
 
@@ -183,7 +138,7 @@ class LayoutBuilder<Arg : Layout, Data>(
 
     @JvmName("routeWithData")
     inline fun <reified RArg : Route, RData> route(init: @NodeMarker RouteBuilder<RArg, RData>.() -> Unit) {
-        val routeBuilder = RouteBuilder<RArg, RData>(RArg::class, type, router)
+        val routeBuilder = RouteBuilder<RArg, RData>(router, RArg::class, type)
 
         init(routeBuilder)
 
@@ -193,7 +148,7 @@ class LayoutBuilder<Arg : Layout, Data>(
 
     @JvmName("routeWithoutData")
     inline fun <reified RArg : Route> route(init: @NodeMarker RouteBuilder<RArg, Unit>.() -> Unit) {
-        val routeBuilder = RouteBuilder<RArg, Unit>(RArg::class, type, router)
+        val routeBuilder = RouteBuilder<RArg, Unit>(router, RArg::class, type)
 
         init(routeBuilder)
 
@@ -231,32 +186,5 @@ class LayoutBuilder<Arg : Layout, Data>(
         router.registerLayout(layoutBuilder)
     }
 
-    fun loader(fn: suspend () -> Data) {
-        loaderFn = loaderFn@ {
-            if (loading.value) {
-                return@loaderFn
-            }
-
-            loading.value = true
-            data = fn()
-            loading.value = false
-        }
-    }
-
-    fun loader(fn: suspend (Arg?) -> Data) {
-        loaderFn = loaderFn@ {
-            if (loading.value) {
-                return@loaderFn
-            }
-
-            loading.value = true
-            @Suppress("UNCHECKED_CAST")
-            data = fn(it as Arg?)
-            loading.value = false
-        }
-    }
-
-    fun pending(fn: @Composable () -> Unit) {
-        pendingComposable = fn
-    }
+    public override fun loader(fn: suspend (Arg?) -> Data) = super.loader(fn)
 }

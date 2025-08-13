@@ -18,7 +18,7 @@ fun <T : Layout> KClass<T>.getOrNull(): T? {
     val router = getRouter()
     val currentLayout = getCurrentLayout()
 
-    if (router.getWithParents(currentLayout).any { it.type == this }) {
+    if (router.safeAccess(currentLayout).withParents.any { it.type == this }) {
         return router.safeAccess(this).arg.value as T?
     }
 
@@ -35,5 +35,5 @@ fun <T : Layout> KClass<T>.isActive(): Boolean {
     val router = getRouter()
     val activeRouteParentType = router.safeAccess(router.getActiveRoute()::class).parentType
 
-    return router.getWithParents(activeRouteParentType).any { it.type == this }
+    return router.safeAccess(activeRouteParentType).withParents.any { it.type == this }
 }

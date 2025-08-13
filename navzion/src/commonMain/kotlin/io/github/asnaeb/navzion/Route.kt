@@ -1,3 +1,3 @@
 package io.github.asnaeb.navzion
 
-interface Route
+interface Route : Node

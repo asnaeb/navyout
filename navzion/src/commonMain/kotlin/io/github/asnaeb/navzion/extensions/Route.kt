@@ -13,14 +13,8 @@ fun <T : Route> KClass<T>.isLoading(): Boolean {
 
 @Composable
 fun <T : Route> KClass<T>.get(): T {
-    val activeRoute = getRouter().activeRoute.value
-
-    if (this.isInstance(activeRoute)) {
-        @Suppress("UNCHECKED_CAST")
-        return activeRoute as T
-    }
-
-    error("Active route is not of type $this. (Found ${activeRoute::class})")
+    @Suppress("UNCHECKED_CAST")
+    return getRouter().backStack.value.last { it::class == this } as T
 }
 
 @Composable

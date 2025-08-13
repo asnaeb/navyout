@@ -15,7 +15,6 @@ import io.github.asnaeb.navzion.Router
 import io.github.asnaeb.navzion.extensions.get
 import io.github.asnaeb.navzion.extensions.getOrNull
 import kotlinx.coroutines.delay
-import kotlinx.serialization.Serializable
 import kotlin.random.Random
 
 data class User(
@@ -28,37 +27,26 @@ data class User(
     val addressCity: String
 )
 
-@Serializable
 data object Main : Route
 
-@Serializable
 data class UserLayout(val userId: Int) : Layout
 
-@Serializable
 data object AnotherLayout : Layout
 
-@Serializable
 data object UserHome : Route
 
-@Serializable
 data object UserFirstName : Route
 
-@Serializable
 data object UserLastName : Route
 
-@Serializable
 data object UserEmail : Route
 
-@Serializable
 data class UserAddress(val type: String) : Layout
 
-@Serializable
 data object AddressStreet : Route
 
-@Serializable
 data object AddressCity : Route
 
-@Serializable
 data class AnotherRoute(val value: String) : Route
 
 val users = arrayOf(
@@ -82,7 +70,7 @@ val router = Router(start = Main) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (id in 1..3) {
-                        Box(Modifier.clickable { router.navigate(UserHome, UserLayout(id)) }) {
+                        Box(Modifier.clickable { router.navigate(AddressStreet, UserAddress("CUST"), UserLayout(id)) }) {
                             BasicText("Go to user $id >")
                         }
                     }
@@ -107,11 +95,7 @@ val router = Router(start = Main) {
     }
 
     layout<AnotherLayout, Int> {
-        loader { ->
-            delay(500)
-            println("Loading AnotherLayout...")
-            Random.nextInt()
-        }
+        loader { -> Random.nextInt() }
 
         wrapper { data, content ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -123,11 +107,18 @@ val router = Router(start = Main) {
         route<AnotherRoute, String> {
             loader { arg ->
                 println("Loading AnotherRoute with arg: ${arg.value}...")
-                delay(500)
+                delay(1000)
                 "asnaeb"
             }
 
-            content { data -> BasicText("Hello another router: ${AnotherRoute::class.get().value}, data: $data") }
+            pending {
+                BasicText("Loading AnotherRoute...")
+            }
+
+            content { data ->
+                val route = AnotherRoute::class.get()
+                BasicText("Hello another router: ${route}, data: $data")
+            }
         }
     }
 
