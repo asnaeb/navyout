@@ -13,8 +13,15 @@ fun <T : Route> KClass<T>.isLoading(): Boolean {
 
 @Composable
 fun <T : Route> KClass<T>.get(): T {
-    @Suppress("UNCHECKED_CAST")
-    return getRouter().backStack.value.last { it::class == this } as T
+    val router = getRouter()
+
+    try {
+        @Suppress("UNCHECKED_CAST")
+        return router.backStack.value.last { it::class == this } as T
+    }
+    catch (_: NoSuchElementException) {
+        error("Active route is not of type ${this.qualifiedName}")
+    }
 }
 
 @Composable

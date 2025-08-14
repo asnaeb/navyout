@@ -83,39 +83,17 @@ abstract class NodeBuilder<NodeType : Any, Arg : NodeType, Data>(
     }
 
     fun loader(fn: suspend () -> Data) {
-        loaderFn = loaderFn@ {
-            if (loading.value) {
-                return@loaderFn
-            }
-
-            loading.value = true
-
-            try {
-                data = fn()
-                loaded.value = true
-            }
-            finally {
-                loading.value = false
-            }
+        loaderFn = {
+            data = fn()
+            loaded.value = true
         }
     }
 
     protected open fun loader(fn: suspend (Arg?) -> Data) {
-        loaderFn = loaderFn@ {
-            if (loading.value) {
-                return@loaderFn
-            }
-
-            loading.value = true
-
-            try {
-                @Suppress("UNCHECKED_CAST")
-                data = fn(it as Arg?)
-                loaded.value = true
-            }
-            finally {
-                loading.value = false
-            }
+        @Suppress("UNCHECKED_CAST")
+        loaderFn = {
+            data = fn(it as Arg?)
+            loaded.value = true
         }
     }
 

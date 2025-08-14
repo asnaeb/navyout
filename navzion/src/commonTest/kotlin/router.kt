@@ -107,13 +107,10 @@ val router = Router(start = Main) {
         route<AnotherRoute, String> {
             loader { arg ->
                 println("Loading AnotherRoute with arg: ${arg.value}...")
-                delay(1000)
+                delay(5000)
                 "asnaeb"
             }
 
-            pending {
-                BasicText("Loading AnotherRoute...")
-            }
 
             content { data ->
                 val route = AnotherRoute::class.get()

@@ -56,25 +56,29 @@ class RouteBuilder<Arg : Route, Data>(
                 contentComposable?.invoke(rememberedData as Data)
             }
             else {
-                LaunchedEffect(Unit) {
-                    val activeRoute = router.activeRoute
-
-                    require(type.isInstance(activeRoute))
-
-                    loaderFn?.invoke(activeRoute)
-                }
-
                 pendingComposable?.invoke()
             }
         }
     }
 
     fun content(fn: @Composable () -> Unit) {
-        contentComposable = { _ -> fn() }
+        contentComposable = { _ ->
+            fn()
+
+            LaunchedEffect(Unit) {
+                loading.value = false
+            }
+        }
     }
 
     fun content(fn: @Composable (Data) -> Unit) {
-        contentComposable = fn
+        contentComposable = { data ->
+            fn(data)
+
+            LaunchedEffect(Unit) {
+                loading.value = false
+            }
+        }
     }
 
     @Suppress("UNCHECKED_CAST")

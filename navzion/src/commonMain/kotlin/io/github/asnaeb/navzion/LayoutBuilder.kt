@@ -105,10 +105,6 @@ class LayoutBuilder<Arg : Layout, Data>(
                 }
             }
             else {
-                LaunchedEffect(Unit) {
-                    loaderFn?.invoke(arg.value)
-                }
-
                 CurrentLayoutProvider(type) {
                     pendingComposable?.invoke()
                 }
@@ -129,11 +125,23 @@ class LayoutBuilder<Arg : Layout, Data>(
     }
 
     fun wrapper(fn: @Composable (@Composable () -> Unit) -> Unit) {
-        wrapperComposable = { _, children -> fn(children) }
+        wrapperComposable = { _, children ->
+            fn(children)
+
+            LaunchedEffect(Unit) {
+                loading.value = false
+            }
+        }
     }
 
     fun wrapper(fn: @Composable (Data, @Composable () -> Unit) -> Unit) {
-        wrapperComposable = fn
+        wrapperComposable = { data, children ->
+            fn(data, children)
+
+            LaunchedEffect(Unit) {
+                loading.value = false
+            }
+        }
     }
 
     @JvmName("routeWithData")

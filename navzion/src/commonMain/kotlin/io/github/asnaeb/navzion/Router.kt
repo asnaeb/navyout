@@ -3,13 +3,14 @@ package io.github.asnaeb.navzion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
-import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -17,7 +18,11 @@ import kotlinx.coroutines.withContext
 import kotlin.reflect.KClass
 
 @Stable
-class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> Unit) {
+class Router(
+    start: Route,
+    internal val loadingDelayMs: Long = 50,
+    init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> Unit
+) {
     private val rootLayoutBuilder: LayoutBuilder<Nothing, Unit> = LayoutBuilder(this, Nothing::class, null)
 
     internal val backStack = MutableStateFlow(listOf(start))
@@ -40,78 +45,49 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> 
         registerLayout(rootLayoutBuilder)
     }
 
-    private fun updateActiveRoute(route: Route) {
-        backStack.update {
-            if (it.size >= 2) {
-                it.takeLast(1) + route
-            }
-
-            it + route
-        }
-    }
-
     private suspend fun runLoaderIfNeeded(route: Route) {
         safeAccess(route::class).let {
-            if (it.loaderFn != null && it.pendingComposable == null) {
+            if (it.loaderFn == null) {
+                return
+            }
+
+            CoroutineScope(Dispatchers.Default).launch {
+                delay(loadingDelayMs)
+                if (!it.loaded.value) {
+                    it.loading.value = true
+                }
+            }
+
+            if (it.pendingComposable == null) {
                 it.loaderFn?.invoke(route)
+            }
+            else {
+                CoroutineScope(Dispatchers.Default).launch {
+                    it.loaderFn?.invoke(route)
+                }
             }
         }
     }
 
     private suspend fun runLoaderIfNeeded(layoutBuilder: LayoutBuilder<*, *>) {
-        if (layoutBuilder.loaderFn != null && layoutBuilder.pendingComposable == null) {
+        if (layoutBuilder.loaderFn == null) {
+            return
+        }
+
+        CoroutineScope(Dispatchers.Default).launch {
+            delay(loadingDelayMs)
+
+            if (!layoutBuilder.loaded.value) {
+                layoutBuilder.loading.value = true
+            }
+        }
+
+        if (layoutBuilder.pendingComposable == null) {
             layoutBuilder.loaderFn?.invoke(layoutBuilder.arg.value)
         }
-    }
-
-    private suspend fun runLoaders(layouts: List<LayoutBuilder<*, *>>, requestedRoute: Route) {
-        coroutineScope {
-            layouts.forEach {
-                launch {
-                    runLoaderIfNeeded(it)
-                }
-            }
-
-            launch {
-                runLoaderIfNeeded(requestedRoute)
-            }
-        }
-    }
-
-    private fun changeDestination(
-        navController: NavController,
-        actualDestination: String,
-        requestedRoute: Route
-    ) {
-        val prevActiveRoute = safeAccess(activeRoute::class)
-
-        navController.navigate(actualDestination)
-
-        updateActiveRoute(requestedRoute)
-
-        if (prevActiveRoute.data !is Unit) {
-            prevActiveRoute.data = null
-        }
-
-        layoutBuilders.values.forEach {
-            if (it !in safeAccess(requestedRoute::class).parents) {
-                it.arg.value = null
-                it.data = null
-            }
-        }
-    }
-
-    private fun performNavigation(
-        navController: NavController,
-        layouts: List<LayoutBuilder<*, *>>,
-        actualDestination: String,
-        requestedRoute: Route
-    ) {
-        job?.cancel()
-        job = CoroutineScope(Dispatchers.Default).launch {
-            runLoaders(layouts, requestedRoute)
-            withContext(Dispatchers.Main) {
-                changeDestination(navController, actualDestination, requestedRoute)
+        else {
+            CoroutineScope(Dispatchers.Default).launch {
+                layoutBuilder.loaderFn?.invoke(layoutBuilder.arg.value)
             }
         }
     }
@@ -122,27 +98,89 @@ class Router(start: Route, init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> 
         val navController = nearestCommonParent.navController ?: error("NavHostController not registered")
         val relevantParents = toParents.take(toParents.indexOf(nearestCommonParent))
 
-        if (relevantParents.isEmpty()) {
-            performNavigation(navController, relevantParents, requestedRouteBuilder.key, requestedRoute)
-            return
+        val destination: String = if (relevantParents.isEmpty()) {
+            requestedRouteBuilder.key
         }
-
-        if (relevantParents.size == 1) {
+        else if (relevantParents.size == 1) {
             relevantParents.first().destination = requestedRouteBuilder.key
-            performNavigation(navController, relevantParents, relevantParents.first().key, requestedRoute)
-            return
+            relevantParents.first().key
+        }
+        else {
+            relevantParents.forEachIndexed { i, it ->
+                if (i == 0) {
+                    it.destination = requestedRouteBuilder.key
+                }
+                else {
+                    it.destination = relevantParents[i - 1].key
+                }
+            }
+
+            relevantParents.last().key
         }
 
-        relevantParents.forEachIndexed { i, it ->
-            if (i == 0) {
-                it.destination = requestedRouteBuilder.key
+        job?.cancel()
+
+        job = CoroutineScope(Dispatchers.Default).launch {
+            coroutineScope {
+                relevantParents.forEach {
+                    launch {
+                        runLoaderIfNeeded(it)
+                    }
+                }
+
+                launch {
+                    runLoaderIfNeeded(requestedRoute)
+                }
             }
-            else {
-                it.destination = relevantParents[i - 1].key
+
+            if (requestedRouteBuilder.loading.value || relevantParents.any { it.loading.value }) {
+                delay(loadingDelayMs)
+            }
+
+            withContext(Dispatchers.Main) {
+                val prevActiveRoute = safeAccess(activeRoute::class)
+
+                launch {
+                    navController.navigate(destination)
+                }
+
+                launch {
+                    backStack.update {
+                        if (it.size == 2) {
+                            it.takeLast(1) + requestedRoute
+                        }
+
+                        it + requestedRoute
+                    }
+                }
+
+                if (prevActiveRoute.data !is Unit) {
+                    launch {
+                        prevActiveRoute.data = null
+                    }
+                }
+
+
+                layoutBuilders.values.forEach {
+                    if (it !in safeAccess(requestedRoute::class).parents) {
+                        launch {
+                            it.arg.value = null
+                            it.data = null
+                        }
+                    }
+                }
             }
         }
 
-        performNavigation(navController, relevantParents, relevantParents.last().key, requestedRoute)
+        job?.invokeOnCompletion { e ->
+            if (e is CancellationException) {
+                relevantParents.forEach {
+                    it.loading.value = false
+                }
+
+                requestedRouteBuilder.loading.value = false
+            }
+        }
     }
 
     @PublishedApi
