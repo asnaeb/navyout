@@ -1,17 +1,20 @@
-package io.github.asnaeb.navzion
+package io.github.asnaeb.navyout
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.util.fastForEachReversed
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,7 +22,7 @@ import kotlin.reflect.KClass
 
 @Stable
 class Router(
-    start: Route,
+    private val start: Route,
     internal val loadingDelayMs: Long = 50,
     init: @NodeMarker LayoutBuilder<Nothing, Unit>.() -> Unit
 ) {
@@ -121,17 +124,12 @@ class Router(
         job?.cancel()
 
         job = CoroutineScope(Dispatchers.Default).launch {
-            coroutineScope {
-                relevantParents.forEach {
-                    launch {
-                        runLoaderIfNeeded(it)
-                    }
-                }
-
-                launch {
-                    runLoaderIfNeeded(requestedRoute)
-                }
+            // TODO verify if this needs to run in reverse order
+            relevantParents.fastForEachReversed {
+                runLoaderIfNeeded(it)
             }
+
+            runLoaderIfNeeded(requestedRoute)
 
             if (requestedRouteBuilder.loading.value || relevantParents.any { it.loading.value }) {
                 delay(loadingDelayMs)
@@ -219,7 +217,7 @@ class Router(
         layoutBuilders[layoutBuilder.type] = layoutBuilder
     }
 
-    fun <Arg : Route> navigate(to: Arg, layoutArg: Layout, vararg args: Layout) {
+    fun navigate(to: Route, layoutArg: Layout, vararg args: Layout) {
         val layoutArgSet = args.toMutableSet().apply { add(layoutArg) }
 
         if (activeRoute == to && layoutArgSet.all { safeAccess(it::class).arg.value == it }) {
@@ -250,7 +248,7 @@ class Router(
         navigateInternal(nearestCommonParent, to)
     }
 
-    fun <Arg : Route> navigate(to: Arg) {
+    fun navigate(to: Route) {
         if (activeRoute == to) {
             return
         }
@@ -264,8 +262,19 @@ class Router(
 
     @Composable
     fun isLoading(): Boolean {
-        return layoutBuilders.values.any { it.loading.collectAsState().value  }
-                || routeBuilders.values.any { it.loading.collectAsState().value  }
+        val loadingStates = remember {
+            layoutBuilders.values.map { it.loading } + routeBuilders.values.map { it.loading }
+        }
+
+        val initialValue = loadingStates.any { it.value }
+
+        val combined = remember {
+            combine (loadingStates) {
+                states -> states.any { it }
+            }
+        }
+
+        return combined.collectAsState(initialValue).value
     }
 
     @Composable
@@ -273,8 +282,17 @@ class Router(
 
     @Composable
     fun Render() {
+        LaunchedEffect(Unit) {
+            launch {
+                runLoaderIfNeeded(rootLayoutBuilder)
+            }
+
+            launch {
+                runLoaderIfNeeded(start)
+            }
+        }
+
         RouterProvider(this) {
-            // TODO Refactor to not use this extra NavHost
             NavHost(rememberNavController(), rootLayoutBuilder.key) {
                 rootLayoutBuilder.render(this@NavHost)
             }

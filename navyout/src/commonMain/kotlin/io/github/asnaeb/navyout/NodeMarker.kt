@@ -1,4 +1,4 @@
-package io.github.asnaeb.navzion
+package io.github.asnaeb.navyout
 
 @Target(AnnotationTarget.TYPE, AnnotationTarget.CLASS)
 @DslMarker

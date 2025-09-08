@@ -1,10 +1,10 @@
-package io.github.asnaeb.navzion.extensions
+package io.github.asnaeb.navyout.extensions
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import io.github.asnaeb.navzion.Layout
-import io.github.asnaeb.navzion.getCurrentLayout
-import io.github.asnaeb.navzion.getRouter
+import io.github.asnaeb.navyout.Layout
+import io.github.asnaeb.navyout.getCurrentLayout
+import io.github.asnaeb.navyout.getRouter
 import kotlin.reflect.KClass
 
 @Composable

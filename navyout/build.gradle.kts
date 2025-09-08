@@ -54,7 +54,7 @@ kotlin {
 }
 
 android {
-    namespace = "io.github.asnaeb.navzion"
+    namespace = "io.github.asnaeb.navyout"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -76,7 +76,7 @@ mavenPublishing {
         name = "Navzion"
         description = "A KMP navigation library based on the official navigation lib"
         inceptionYear = "2025"
-        url = "https://github.com/asnaeb/navzion/"
+        url = "https://github.com/asnaeb/nayout/"
         licenses {
             license {
                 name = "Roberto De Lucia"

@@ -1,4 +1,4 @@
-package io.github.asnaeb.navzion
+package io.github.asnaeb.navyout
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition

@@ -1,4 +1,4 @@
-package io.github.asnaeb.navzion
+package io.github.asnaeb.navyout
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider

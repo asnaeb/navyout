@@ -1,9 +1,9 @@
-package io.github.asnaeb.navzion.extensions
+package io.github.asnaeb.navyout.extensions
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import io.github.asnaeb.navzion.Route
-import io.github.asnaeb.navzion.getRouter
+import io.github.asnaeb.navyout.Route
+import io.github.asnaeb.navyout.getRouter
 import kotlin.reflect.KClass
 
 @Composable

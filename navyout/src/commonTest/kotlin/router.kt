@@ -9,11 +9,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.asnaeb.navzion.Layout
-import io.github.asnaeb.navzion.Route
-import io.github.asnaeb.navzion.Router
-import io.github.asnaeb.navzion.extensions.get
-import io.github.asnaeb.navzion.extensions.getOrNull
+import io.github.asnaeb.navyout.Layout
+import io.github.asnaeb.navyout.Route
+import io.github.asnaeb.navyout.Router
+import io.github.asnaeb.navyout.extensions.get
+import io.github.asnaeb.navyout.extensions.getOrNull
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
@@ -87,6 +87,13 @@ val router = Router(start = Main) {
     }
 
     route<Main> {
+        pending {
+            BasicText("loading main")
+        }
+        loader { ->
+            delay(500)
+        }
+
         content { ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 BasicText("Please select a user from the list")

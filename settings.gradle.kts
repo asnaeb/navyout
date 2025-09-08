@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "navzion"
-include(":navzion")
+rootProject.name = "navyout"
+include(":navyout")
