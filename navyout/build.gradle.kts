@@ -10,12 +10,11 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeMultiplatform)
-    id("maven-publish")
-    kotlin("plugin.serialization") version "2.2.0"
+    kotlin("plugin.serialization") version libs.versions.kotlin
 }
 
 group = "io.github.asnaeb"
-version = "1.0.0"
+version = "0.0.1"
 
 kotlin {
     jvm()
@@ -68,9 +67,9 @@ android {
 mavenPublishing {
     publishToMavenCentral()
 
-    //signAllPublications()
+    signAllPublications()
 
-    coordinates(group.toString(), rootProject.name, version.toString())
+    coordinates(group.toString(), name, version.toString())
 
     pom {
         name = "Navzion"
@@ -92,9 +91,9 @@ mavenPublishing {
             }
         }
         scm {
-            url = "XXX"
-            connection = "YYY"
-            developerConnection = "ZZZ"
+            url = "https://github.com/asnaeb/navyout"
+            connection = "scm:git:git://github.com/asnaeb/navyout.git"
+            developerConnection = "scm:git:ssh://git@github.com/asnaeb/navyout.git"
         }
     }
 }
